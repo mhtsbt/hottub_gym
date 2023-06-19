@@ -1,5 +1,4 @@
 import numpy as np
-import pygame
 
 import gymnasium as gym
 from gymnasium import spaces
@@ -15,7 +14,7 @@ class HotTubEnv(gym.Env):
         self.interval_len = interval_len
         self.heat_deg_hour = 2
         self.energy_usage_hour = 0.680  # kwh
-        self.cooling_k = 0.001
+        self.cooling_k = 0.00045
 
         self.observation_space = spaces.Box(0, 1, shape=(3,), dtype=float)
 
@@ -32,7 +31,10 @@ class HotTubEnv(gym.Env):
         return np.array([self.tub_temp/40, self.ambient_temp/40, self.current_interval/self.n_intervals])
 
     def _get_info(self):
-        return {}
+        return {
+            "tub_temp": self.tub_temp,
+            "current_interval": self.current_interval
+        }
 
     def reset(self, seed=None, options=None):
         # We need the following line to seed self.np_random
@@ -52,16 +54,17 @@ class HotTubEnv(gym.Env):
         return observation, info
 
     def _heat_interval(self):
-        heat_deg = self.heat_deg_hour*(self.interval/60)
+        heat_deg = self.heat_deg_hour*(self.interval_len/60)
 
         self.tub_temp += heat_deg
-        self.energy_usage += self.energy_usage_hour*(self.interval/60)
+        self.energy_usage += self.energy_usage_hour*(self.interval_len/60)
 
         if self.tub_temp > self.max_tub_temp:
             self.tub_temp = self.max_tub_temp
 
     def _idle_interval(self):
-        new_temp = self.ambient_temp+(self.tub_temp-self.ambient_temp)*np.exp(self.cooling_k)
+        new_temp = self.ambient_temp+(self.tub_temp-self.ambient_temp)*np.exp(-self.cooling_k*self.interval_len)
+        self.tub_temp = new_temp
 
     def step(self, action):
 
@@ -72,12 +75,14 @@ class HotTubEnv(gym.Env):
             # heat the tub for 5min, use enery
             self._heat_interval()
 
-        terminated = self.current_interval = self.n_intervals
+        terminated = self.current_interval == self.n_intervals
         reward = 1 if terminated else 0  # Binary sparse rewards
         observation = self._get_obs()
         info = self._get_info()
 
         if self.render_mode == "human":
             self._render_frame()
+
+        self.current_interval += 1
 
         return observation, reward, terminated, False, info
